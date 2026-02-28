@@ -16,7 +16,7 @@ const createPeerConn = () => {
 }
 
 // Initialize Connection
-const initConn = async (peerConn: RTCPeerConnection, ws: WebSocket, audioRef: React.RefObject<HTMLAudioElement | null>) => {
+const initConn = async (peerConn: RTCPeerConnection, ws: WebSocket, localVideoRef: React.RefObject<HTMLVideoElement | null>, remoteVideoRef: React.RefObject<HTMLVideoElement | null>) => {
   // Open WebSocket connection to the Signaling Server
     ws.onopen = () => {
       const data = {
@@ -45,22 +45,17 @@ const initConn = async (peerConn: RTCPeerConnection, ws: WebSocket, audioRef: Re
       const receiverDataChannel = event.channel;
 
       receiverDataChannel.onopen = () => {
-        console.log("Receiver data channel is open");
-        receiverDataChannel.send("Hi from the receiver channel");
+        console.log("");
       }
-
-      receiverDataChannel.onmessage = (event) => {
-        console.log("Message from remote peer2: ", event.data);
-      }
-
-
     }
 
     // handle Remote audio/ video flow
     peerConn.ontrack = (event) => {
-      const audioStream = event.streams[0];
-      if(audioRef.current) {
-        audioRef.current.srcObject = audioStream;
+      const mediaStream = event.streams[0];
+      const video = remoteVideoRef.current;
+
+      if (video && video.srcObject !== mediaStream) {
+        video.srcObject = mediaStream;
       }
     }
 
@@ -96,7 +91,7 @@ const initConn = async (peerConn: RTCPeerConnection, ws: WebSocket, audioRef: Re
       console.log(peerConn.connectionState);
     };
 
-  await addLocalMedia(peerConn);
+  await addLocalMedia(peerConn, localVideoRef);
   await handleDataChannel(peerConn);
   await createOffer(peerConn, ws);
 }
@@ -121,10 +116,16 @@ const handleDataChannel = async (peerConn: RTCPeerConnection) => {
 }
 
 // Config media and add to remote peer
-const addLocalMedia = async (peerConn: RTCPeerConnection) => {
+const addLocalMedia = async (peerConn: RTCPeerConnection, localVideoRef: React.RefObject<HTMLVideoElement | null>) => {
   const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true});
   localStream.getTracks().forEach((track) => {
     peerConn.addTrack(track, localStream);
+    
+    const video = localVideoRef.current;
+
+    if (video && video.srcObject !== localStream) {
+      video.srcObject = localStream;
+    }
   });
 }
 
@@ -146,14 +147,16 @@ const createOffer = async (peerConn: RTCPeerConnection, ws: WebSocket) => {
 }
 
 function App() {
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const localVideoRef  = useRef<HTMLVideoElement>(null);
+
   try{
 
     useEffect(() => {
       const peerConn = createPeerConn();
-      const ws = new WebSocket("wss://unadjourned-keva-toilsomely.ngrok-free.dev");
+      const ws = new WebSocket("ws://localhost:8000");
 
-      initConn(peerConn, ws, audioRef); 
+      initConn(peerConn, ws, localVideoRef, remoteVideoRef); 
 
       return () => {
         peerConn.close();
@@ -168,10 +171,20 @@ function App() {
   return (
     <>
       <h1>WebRTC Begins</h1>
-        <audio 
-          ref={audioRef}
-          autoPlay={true}
-        ></audio>
+      <video
+        ref={localVideoRef}
+        autoPlay={true}
+        playsInline
+        muted={true}
+        width={250}
+      ></video>
+      <video
+        ref={remoteVideoRef}
+        autoPlay={true}
+        playsInline
+        muted={false}
+        width={250}
+      ></video>
     </>
   )
 }
